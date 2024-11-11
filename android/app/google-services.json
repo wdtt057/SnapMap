@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "966942783222",
+    "project_id": "snapmap-2fde2",
+    "storage_bucket": "snapmap-2fde2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:966942783222:android:5eacc7030249e810bcded7",
+        "android_client_info": {
+          "package_name": "com.example.snapmap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCsgT5x7UgPkMPcKHRoKn4nzsiXSxLAaOU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

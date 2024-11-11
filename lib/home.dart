@@ -17,7 +17,6 @@ class _HomePageState extends State<HomePage> {
   int _followers = 120;
   int _following = 150;
 
-  // Method to capture an image using the camera
   Future<void> _captureImage() async {
     final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
     if (photo != null) {
@@ -27,14 +26,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // Method to handle bottom navigation tap
   void _onBottomNavTap(int index) {
     setState(() {
       _selectedIndex = index;
     });
   }
 
-  // Main content based on selected index
   Widget _buildContent() {
     switch (_selectedIndex) {
       case 0:
