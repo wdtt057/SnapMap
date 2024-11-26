@@ -1,15 +1,17 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'firebase_options.dart';
 import 'home.dart';
 import 'welcome.dart';
 import 'login.dart';
 import 'register.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env"); // Load the environment variables
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -17,6 +19,7 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
@@ -30,19 +33,17 @@ class MyApp extends StatelessWidget {
 }
 
 final GoRouter _router = GoRouter(
-  redirect: (context, state) {
-    final user = FirebaseAuth.instance.currentUser;
-    final loggingIn = state.uri.toString() == '/login' || state.uri.toString() == '/register';
-
-    if (user == null && !loggingIn) return '/welcome';
-    if (user != null && loggingIn) return '/';
-    return null;
-  },
   routes: [
     GoRoute(
       path: '/',
-      builder: (context, state) => HomePage(),
-    ),
+      builder: (context, state) {
+        if (FirebaseAuth.instance.currentUser == null) {
+          return WelcomePage();
+        } else {
+          return HomePage();
+        }
+      }
+      ),
     GoRoute(
       path: '/welcome',
       builder: (context, state) => WelcomePage(),
