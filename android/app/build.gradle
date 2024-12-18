@@ -1,3 +1,4 @@
+
 plugins {
     id "com.android.application"
     // START: FlutterFire Configuration
@@ -7,6 +8,21 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
 }
+
+def loadEnvVariable(String key, String defaultValue) {
+    def envFile = rootProject.file('.env')
+    if (envFile.exists()) {
+        envFile.eachLine { line ->
+            def (k, v) = line.split('=')
+            if (k.trim() == key) {
+                return v.trim()
+            }
+        }
+    }
+    return defaultValue
+}
+
+def MAPS_API_KEY = loadEnvVariable("MAPS_API_KEY", "default_key")
 
 android {
     namespace = "com.example.snapmap"
@@ -36,7 +52,8 @@ android {
             abiFilters "arm64-v8a" // Target only arm64
         }
         manifestPlaceholders = [
-                MAPS_API_KEY: project.env.MAPS_API_KEY
+                MAPS_API_KEY: MAPS_API_KEY,
+                applicationName   : "com.example.snapmap"
         ]
     }
 
@@ -55,7 +72,4 @@ flutter {
 
 dependencies {
     implementation 'androidx.multidex:multidex:2.0.1'
-    classpath "com.android.tools.build:gradle:8.0.0"
-    classpath "com.google.gms:google-services:4.3.15"
-    classpath "com.codingfeline.gradle:gradle-env-loader:1.1.0"
 }
