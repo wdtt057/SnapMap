@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:location/location.dart';
 import 'package:snapmap/post_detail.dart';
+import 'package:snapmap/profile_page.dart';
 
 import 'edit_post.dart';
 
@@ -37,6 +38,7 @@ class _HomePageState extends State<HomePage> {
   String _userName = "Dengtai";
   int _followers = 120;
   int _following = 150;
+  int _postCount = 0;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -136,10 +138,17 @@ class _HomePageState extends State<HomePage> {
 
       final downloadUrl = await imageRef.getDownloadURL();
 
+      final currentUser = _auth.currentUser;
+
+      if (currentUser == null) {
+        print("Error: No authenticated user.");
+        return null;
+      }
+
       // Save metadata to Firestore and return the document reference
       return await _firestore.collection('photos').add({
         'url': downloadUrl,
-        'userId': _auth.currentUser?.uid ?? 'anonymous',
+        'userId': currentUser.uid,
         'userName': _userName,
         'description': '', // Empty by default
         'location': {
@@ -159,10 +168,10 @@ class _HomePageState extends State<HomePage> {
       markerId: MarkerId(imageUrl),
       position: position,
       infoWindow: InfoWindow(
-        title: _userName,
-        snippet: 'Photo Uploaded',
+        title: "Photo",
+        snippet: description,
         onTap: () {
-          // Show image preview dialog
+          // Show a dialog with the image preview
           showDialog(
             context: context,
             builder: (BuildContext context) {
@@ -170,9 +179,14 @@ class _HomePageState extends State<HomePage> {
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Image.network(imageUrl),
+                    Image.network(
+                      imageUrl,
+                      height: 200,
+                      width: 200,
+                      fit: BoxFit.cover,
+                    ),
                     const SizedBox(height: 8),
-                    Text(description),
+                    Text(description, style: const TextStyle(fontSize: 14)),
                   ],
                 ),
                 actions: [
@@ -180,7 +194,7 @@ class _HomePageState extends State<HomePage> {
                     onPressed: () {
                       Navigator.of(context).pop();
                     },
-                    child: const Text('Close'),
+                    child: const Text("Close"),
                   ),
                 ],
               );
@@ -196,66 +210,46 @@ class _HomePageState extends State<HomePage> {
   }
 
 
+
   // Load markers from Firestore
   Future<void> _loadMarkers() async {
     try {
-      final snapshot = await _firestore.collection('photos').get();
-      final markers = snapshot.docs.map((doc) {
+      final currentUser = _auth.currentUser;
+
+      if (currentUser == null) {
+        print("Error: No authenticated user.");
+        return;
+      }
+
+      final snapshot = await _firestore
+          .collection('photos')
+          .where('userId', isEqualTo: currentUser.uid)
+          .get();
+
+      for (var doc in snapshot.docs) {
         final data = doc.data();
         final location = data['location'];
-        final imageUrl = data['url'] as String;
-        final description = data['description'] as String? ?? "No description";
+        final imageUrl = data['url'];
+        final description = data['description'] ?? "No description provided";
 
-        return Marker(
-          markerId: MarkerId(doc.id),
-          position: LatLng(location['lat'], location['lng']),
-          infoWindow: InfoWindow(
-            title: data['userName'],
-            snippet: 'Uploaded Photo',
-            onTap: () {
-              // Show image preview dialog
-              showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Image.network(imageUrl),
-                        const SizedBox(height: 8),
-                        Text(description),
-                      ],
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
-                        child: const Text('Close'),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
+        _addMarker(
+          LatLng(location['lat'], location['lng']),
+          imageUrl,
+          description,
         );
-      }).toSet();
-
-      setState(() {
-        _markers = markers;
-      });
+      }
     } catch (e) {
       print("Error loading markers: $e");
     }
   }
 
 
+
   // Bottom Navigation Content
   Widget _buildContent() {
     switch (_selectedIndex) {
       case 0:
-        return const Center(child: Text('Welcome to SnapMap!'));
+        return const Center(child: Text('Welcome to SnapMap!\n Friend\'s post will be here'));
       case 1:
         return _buildMapView();
       case 2:
@@ -281,8 +275,13 @@ class _HomePageState extends State<HomePage> {
 
   // Build Photo Gallery
   Widget _buildPhotoGallery() {
+    final currentUser = _auth.currentUser;
+
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('photos').snapshots(),
+      stream: _firestore
+          .collection('photos')
+          .where('userId', isEqualTo: currentUser?.uid) // Filter by userId
+          .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
@@ -297,30 +296,20 @@ class _HomePageState extends State<HomePage> {
           itemCount: photos.length,
           itemBuilder: (context, index) {
             final photo = photos[index].data() as Map<String, dynamic>;
-
-            // Extract metadata
-            final imageUrl = photo['url'] as String;
-            final description = photo['description'] as String? ?? "No description provided";
-            final locationData = photo['location'] as Map<String, dynamic>? ?? {};
-            final location = LatLng(
-              locationData['lat'] as double? ?? 0.0,
-              locationData['lng'] as double? ?? 0.0,
-            );
-
             return GestureDetector(
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => PostDetailPage(
-                      imageUrl: imageUrl,
-                      description: description,
-                      location: location,
+                      imageUrl: photo['url'],
+                      description: photo['description'],
+                      location: LatLng(photo['location']['lat'], photo['location']['lng']),
                     ),
                   ),
                 );
               },
-              child: Image.network(imageUrl, fit: BoxFit.cover),
+              child: Image.network(photo['url'], fit: BoxFit.cover),
             );
           },
         );
@@ -328,12 +317,97 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Fetch post count from Firestore
+  Future<void> _fetchPostCount() async {
+    try {
+      final querySnapshot = await _firestore.collection('photos').get();
+      setState(() {
+        _postCount = querySnapshot.size;
+      });
+    } catch (e) {
+      print("Error fetching post count: $e");
+    }
+  }
+
+  // Logout
+  void _logout() async {
+    await _auth.signOut();
+    Navigator.of(context).pushReplacementNamed('/welcome'); // Redirect to Welcome Page
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SnapMap'),
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Colors.blue,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundImage: NetworkImage(
+                      "https://via.placeholder.com/150", // Placeholder image
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _userName,
+                    style: const TextStyle(color: Colors.white, fontSize: 20),
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      Text(
+                        'Followers: $_followers',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Following: $_following',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('Profile'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ProfilePage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.post_add),
+              title: Text('Posts ($_postCount)'),
+              onTap: () {
+                // Navigate to posts page
+                Navigator.pushNamed(context, '/posts');
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Logout'),
+              onTap: _logout,
+            ),
+          ],
+        ),
       ),
       body: _buildContent(),
       floatingActionButton: FloatingActionButton(
