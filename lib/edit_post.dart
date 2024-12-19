@@ -3,12 +3,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditPostPage extends StatefulWidget {
-  final String postId;
+  final DocumentReference documentReference;
   final String currentDescription;
   final LatLng currentLocation;
 
   const EditPostPage({
-    required this.postId,
+    required this.documentReference,
     required this.currentDescription,
     required this.currentLocation,
     Key? key,
@@ -38,7 +38,7 @@ class _EditPostPageState extends State<EditPostPage> {
 
   Future<void> _saveChanges() async {
     try {
-      await FirebaseFirestore.instance.collection('photos').doc(widget.postId).update({
+      await widget.documentReference.update({
         'description': _descriptionController.text,
         'location': {
           'lat': _selectedLocation.latitude,

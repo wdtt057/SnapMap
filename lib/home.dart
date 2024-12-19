@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -5,7 +6,19 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:location/location.dart';
+import 'package:snapmap/post_detail.dart';
 
+import 'edit_post.dart';
+
+class CustomFabLocation extends FloatingActionButtonLocation {
+  @override
+  Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
+    final double fabX = scaffoldGeometry.scaffoldSize.width * 0.1;
+    final double fabY = scaffoldGeometry.scaffoldSize.height * 5 / 6; // Align at bottom with some margin
+    return Offset(fabX, fabY);
+  }
+}
 class HomePage extends StatefulWidget {
   @override
   _HomePageState createState() => _HomePageState();
@@ -13,6 +26,11 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
+  late GoogleMapController _mapController;
+  LatLng _initialCameraPosition = const LatLng(39.7283, -121.8380); // Default location (Chico)
+  Location _location = Location();
+  Set<Marker> _markers = {};
+
   File? _selectedImage;
   int _selectedIndex = 0;
 
@@ -20,67 +38,154 @@ class _HomePageState extends State<HomePage> {
   int _followers = 120;
   int _following = 150;
 
-  // Map-related variables
-  late GoogleMapController _mapController;
-  final LatLng _initialPosition = const LatLng(37.7749, -122.4194); // Default location (San Francisco)
-  Set<Marker> _markers = {};
-
-  // Firebase instances
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Method to capture an image using the camera
-  Future<void> _captureImage() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    if (photo != null) {
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocation();
+    _loadMarkers();
+  }
+
+  // Get the user's current location
+  Future<void> _getUserLocation() async {
+    try {
+      var currentLocation = await _location.getLocation();
       setState(() {
-        _selectedImage = File(photo.path);
+        _initialCameraPosition =
+            LatLng(currentLocation.latitude!, currentLocation.longitude!);
       });
-      await _uploadImage(_selectedImage!);
+    } catch (e) {
+      print("Error getting location: $e");
     }
   }
 
-  // Method to upload image to Firebase Storage and save metadata to Firestore
-  Future<void> _uploadImage(File image) async {
+  Future<String> generatePostId() async {
+    final newPostRef = FirebaseFirestore.instance.collection('photos').doc();
+    if (kDebugMode) {
+      print('Generated Post ID: ${newPostRef.id}');
+    } // Debugging
+    return newPostRef.id;
+  }
+
+  // Capture image and upload it
+  // Provide option to capture image or pick from gallery
+  Future<void> _captureImageOption() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return Wrap(
+          children: [
+            ListTile(
+              leading: Icon(Icons.camera_alt),
+              title: Text('Take a Photo'),
+              onTap: () async {
+                Navigator.pop(context); // Close the bottom sheet
+                await _captureImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.photo_library),
+              title: Text('Choose from Gallery'),
+              onTap: () async {
+                Navigator.pop(context); // Close the bottom sheet
+                await _captureImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+// Capture image from a specific source
+  Future<void> _captureImage(ImageSource source) async {
+    final XFile? photo = await _picker.pickImage(source: source);
+    if (photo != null) {
+      // Upload image to Firebase Storage and save metadata to Firestore
+      final uploadedDoc = await _uploadImage(File(photo.path));
+
+      if (uploadedDoc != null) {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EditPostPage(
+              documentReference: uploadedDoc,
+              currentDescription: '', // Provide default description
+              currentLocation: LatLng(
+                _initialCameraPosition.latitude,
+                _initialCameraPosition.longitude,
+              ), // Default location
+            ),
+          ),
+        );
+
+        if (result != null) {
+          // Optionally handle results if needed
+        }
+      }
+    }
+  }
+
+  Future<DocumentReference?> _uploadImage(File image) async {
     try {
-      // Upload image to Firebase Storage
       final storageRef = FirebaseStorage.instance.ref();
       final imageRef = storageRef.child('photos/${DateTime.now().millisecondsSinceEpoch}.jpg');
       await imageRef.putFile(image);
 
-      // Get download URL
       final downloadUrl = await imageRef.getDownloadURL();
 
-      // Get current user's location (you may need to implement location services)
-      // For this example, we'll use the initial map position
-      final LatLng userLocation = _initialPosition;
-
-      // Save metadata to Firestore
-      await _firestore.collection('photos').add({
+      // Save metadata to Firestore and return the document reference
+      return await _firestore.collection('photos').add({
         'url': downloadUrl,
         'userId': _auth.currentUser?.uid ?? 'anonymous',
         'userName': _userName,
-        'location': {'lat': userLocation.latitude, 'lng': userLocation.longitude},
+        'description': '', // Empty by default
+        'location': {
+          'lat': _initialCameraPosition.latitude,
+          'lng': _initialCameraPosition.longitude,
+        },
         'timestamp': FieldValue.serverTimestamp(),
       });
-
-      // Optionally, update markers to include the new photo
-      _addMarker(userLocation, downloadUrl);
     } catch (e) {
-      print('Error uploading image: $e');
+      print("Error uploading image: $e");
+      return null;
     }
   }
 
-  // Method to add a marker to the map
-  void _addMarker(LatLng position, String imageUrl) {
+  void _addMarker(LatLng position, String imageUrl, String description) {
     final marker = Marker(
       markerId: MarkerId(imageUrl),
       position: position,
       infoWindow: InfoWindow(
         title: _userName,
-        snippet: 'Photo',
+        snippet: 'Photo Uploaded',
         onTap: () {
-          // Handle marker tap if needed
+          // Show image preview dialog
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.network(imageUrl),
+                    const SizedBox(height: 8),
+                    Text(description),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            },
+          );
         },
       ),
     );
@@ -90,165 +195,159 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // Method to load markers from Firestore
+
+  // Load markers from Firestore
   Future<void> _loadMarkers() async {
-    final snapshot = await _firestore.collection('photos').get();
-    final markers = snapshot.docs.map((doc) {
-      final data = doc.data();
-      final location = data['location'];
-      return Marker(
-        markerId: MarkerId(doc.id),
-        position: LatLng(location['lat'], location['lng']),
-        infoWindow: InfoWindow(
-          title: data['userName'] ?? 'User',
-          snippet: 'Photo',
-          onTap: () {
-            // Handle marker tap if needed
-          },
-        ),
-      );
-    }).toSet();
+    try {
+      final snapshot = await _firestore.collection('photos').get();
+      final markers = snapshot.docs.map((doc) {
+        final data = doc.data();
+        final location = data['location'];
+        final imageUrl = data['url'] as String;
+        final description = data['description'] as String? ?? "No description";
 
-    setState(() {
-      _markers = markers;
-    });
+        return Marker(
+          markerId: MarkerId(doc.id),
+          position: LatLng(location['lat'], location['lng']),
+          infoWindow: InfoWindow(
+            title: data['userName'],
+            snippet: 'Uploaded Photo',
+            onTap: () {
+              // Show image preview dialog
+              showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.network(imageUrl),
+                        const SizedBox(height: 8),
+                        Text(description),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        );
+      }).toSet();
+
+      setState(() {
+        _markers = markers;
+      });
+    } catch (e) {
+      print("Error loading markers: $e");
+    }
   }
 
-  void _onBottomNavTap(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
 
+  // Bottom Navigation Content
   Widget _buildContent() {
     switch (_selectedIndex) {
       case 0:
-        return Center(child: Text('Home Content Here', style: TextStyle(fontSize: 20)));
+        return const Center(child: Text('Welcome to SnapMap!'));
       case 1:
         return _buildMapView();
       case 2:
         return _buildPhotoGallery();
       default:
-        return Center(child: Text('Home Content Here', style: TextStyle(fontSize: 20)));
+        return const Center(child: Text('Welcome to SnapMap!'));
     }
   }
 
+  // Build Map View
   Widget _buildMapView() {
     return GoogleMap(
-      initialCameraPosition: CameraPosition(
-        target: _initialPosition,
-        zoom: 12,
-      ),
+      initialCameraPosition: CameraPosition(target: _initialCameraPosition, zoom: 12),
       onMapCreated: (controller) {
         _mapController = controller;
         _loadMarkers();
       },
       markers: _markers,
+      myLocationEnabled: true,
+      myLocationButtonEnabled: true,
     );
   }
 
+  // Build Photo Gallery
   Widget _buildPhotoGallery() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('photos').snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return CircularProgressIndicator();
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
         final photos = snapshot.data!.docs;
         return GridView.builder(
-          itemCount: photos.length,
+          padding: const EdgeInsets.all(8),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
           ),
+          itemCount: photos.length,
           itemBuilder: (context, index) {
             final photo = photos[index].data() as Map<String, dynamic>;
-            return Image.network(photo['url'], fit: BoxFit.cover);
+
+            // Extract metadata
+            final imageUrl = photo['url'] as String;
+            final description = photo['description'] as String? ?? "No description provided";
+            final locationData = photo['location'] as Map<String, dynamic>? ?? {};
+            final location = LatLng(
+              locationData['lat'] as double? ?? 0.0,
+              locationData['lng'] as double? ?? 0.0,
+            );
+
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PostDetailPage(
+                      imageUrl: imageUrl,
+                      description: description,
+                      location: location,
+                    ),
+                  ),
+                );
+              },
+              child: Image.network(imageUrl, fit: BoxFit.cover),
+            );
           },
         );
       },
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SnapMap'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundImage: NetworkImage("https://via.placeholder.com/150"), // Placeholder image
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    _userName,
-                    style: TextStyle(color: Colors.white, fontSize: 20),
-                  ),
-                  SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Text(
-                        'Followers: $_followers',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      SizedBox(width: 10),
-                      Text(
-                        'Following: $_following',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: Icon(Icons.person),
-              title: Text('Profile'),
-              onTap: () {
-                // Navigate to profile page
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.settings),
-              title: Text('Settings'),
-              onTap: () {
-                // Navigate to settings page
-              },
-            ),
-          ],
-        ),
       ),
       body: _buildContent(),
       floatingActionButton: FloatingActionButton(
-        onPressed: _captureImage,
-        child: Icon(Icons.camera_alt),
+        onPressed: _captureImageOption,
+        child: const Icon(Icons.camera_alt),
       ),
+      floatingActionButtonLocation: CustomFabLocation(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: _onBottomNavTap,
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.photo_library),
-            label: 'Gallery',
-          ),
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Map'),
+          BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: 'Gallery'),
         ],
       ),
     );

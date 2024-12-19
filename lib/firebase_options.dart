@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
@@ -25,12 +26,13 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCsgT5x7UgPkMPcKHRoKn4nzsiXSxLAaOU',
-    appId: '1:966942783222:android:5eacc7030249e810bcded7',
+    apiKey: 'AIzaSyBnV7YGL-0n2JlcYBBh7BWSjAybFNFqLxw',
+    appId: '1:966942783222:web:4144557de24cfbd1bcded7',
     messagingSenderId: '966942783222',
     projectId: 'snapmap-2fde2',
-    storageBucket: 'snapmap-2fde2.firebaseapp.com',
     authDomain: 'snapmap-2fde2.firebaseapp.com',
+    storageBucket: 'snapmap-2fde2.firebasestorage.app',
+    measurementId: 'G-46S1GBHMF3',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
@@ -38,6 +40,6 @@ class DefaultFirebaseOptions {
     appId: '1:966942783222:android:5eacc7030249e810bcded7',
     messagingSenderId: '966942783222',
     projectId: 'snapmap-2fde2',
-    storageBucket: 'snapmap-2fde2.firebaseapp.com',
+    storageBucket: 'snapmap-2fde2.firebasestorage.app',
   );
 }
